@@ -11,7 +11,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
@@ -21,25 +21,53 @@ class _LoginScreenState extends State<LoginScreen>
   Map<String, dynamic>? _selectedUser;
   
   late AnimationController _animationController;
+  late AnimationController _backgroundAnimationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _rotationAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Animation controller for main content
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+    
+    // Background animation controller
+    _backgroundAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 20),
+    )..repeat();
+    
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
+    
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.3),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
+    
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+    
+    _rotationAnimation = Tween<double>(begin: 0.0, end: 0.1).animate(
+      CurvedAnimation(
+        parent: _backgroundAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    
     _animationController.forward();
     _loadUsers();
   }
@@ -48,6 +76,7 @@ class _LoginScreenState extends State<LoginScreen>
   void dispose() {
     _passwordController.dispose();
     _animationController.dispose();
+    _backgroundAnimationController.dispose();
     super.dispose();
   }
 
@@ -158,56 +187,137 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).colorScheme.primary,
-              Theme.of(context).colorScheme.primary.withOpacity(0.7),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Icon
+      body: AnimatedBuilder(
+        animation: _backgroundAnimationController,
+        builder: (context, child) {
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                  Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+            child: Stack(
+              children: [
+                // Animated background circles
+                Positioned(
+                  top: -100,
+                  right: -100,
+                  child: Transform.rotate(
+                    angle: _rotationAnimation.value,
+                    child: Container(
+                      width: 300,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.1),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -150,
+                  left: -150,
+                  child: Transform.rotate(
+                    angle: -_rotationAnimation.value,
+                    child: Container(
+                      width: 400,
+                      height: 400,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.08),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 200,
+                  left: 50,
+                  child: Transform.rotate(
+                    angle: _rotationAnimation.value * 0.5,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
+                  ),
+                ),
+                // Main content
+                SafeArea(
+                  child: Center(
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: ScaleTransition(
+                          scale: _scaleAnimation,
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                      // Animated Icon with pulse effect
                       TweenAnimationBuilder<double>(
                         tween: Tween(begin: 0.0, end: 1.0),
-                        duration: const Duration(milliseconds: 1000),
+                        duration: const Duration(milliseconds: 1200),
                         curve: Curves.elasticOut,
                         builder: (context, value, child) {
-                          return Transform.scale(
-                            scale: value,
-                            child: Container(
-                              width: 140,
-                              height: 140,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 30,
-                                    offset: const Offset(0, 15),
+                          return Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Pulse circles
+                              ...List.generate(3, (index) {
+                                return TweenAnimationBuilder<double>(
+                                  tween: Tween(begin: 0.0, end: 1.0),
+                                  duration: Duration(milliseconds: 2000 + (index * 500)),
+                                  builder: (context, pulseValue, child) {
+                                    return Container(
+                                      width: 140 + (pulseValue * 40 * (index + 1)),
+                                      height: 140 + (pulseValue * 40 * (index + 1)),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white.withOpacity(
+                                          (1 - pulseValue) * 0.2,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              }),
+                              // Main icon container
+                              Transform.scale(
+                                scale: value,
+                                child: Container(
+                                  width: 140,
+                                  height: 140,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.3),
+                                        blurRadius: 30,
+                                        offset: const Offset(0, 15),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                  child: Icon(
+                                    FontAwesomeIcons.lock,
+                                    size: 70,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
                               ),
-                              child: Icon(
-                                FontAwesomeIcons.lock,
-                                size: 70,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
+                            ],
                           );
                         },
                       ),
@@ -519,13 +629,18 @@ class _LoginScreenState extends State<LoginScreen>
                                 ),
                         ),
                       ),
-                    ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
