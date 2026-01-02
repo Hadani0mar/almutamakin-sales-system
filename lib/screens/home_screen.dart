@@ -6,6 +6,7 @@ import 'sales_invoices_screen.dart';
 import 'stock_management_screen.dart';
 import 'login_screen.dart';
 import 'update_check_screen.dart';
+import '../services/update_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic>? currentUser;
@@ -18,6 +19,78 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int? _selectedIndex;
+  
+  @override
+  void initState() {
+    super.initState();
+    // التحقق من التحديثات تلقائياً بعد 3 ثواني من بدء التطبيق
+    Future.delayed(const Duration(seconds: 3), () {
+      _checkForUpdatesAutomatically();
+    });
+  }
+  
+  Future<void> _checkForUpdatesAutomatically() async {
+    try {
+      final updateInfo = await UpdateService.checkForUpdates();
+      if (updateInfo != null && 
+          updateInfo['hasUpdate'] == true && 
+          mounted) {
+        _showUpdateDialog(updateInfo);
+      }
+    } catch (e) {
+      // لا نعرض خطأ للمستخدم، فقط نسجله
+      print('خطأ في التحقق التلقائي من التحديثات: $e');
+    }
+  }
+  
+  void _showUpdateDialog(Map<String, dynamic> updateInfo) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(FontAwesomeIcons.circleExclamation, color: Colors.orange),
+            const SizedBox(width: 10),
+            const Text('تحديث متاح'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('الإصدار الحالي: ${updateInfo['currentVersion']}'),
+            Text('الإصدار الجديد: ${updateInfo['latestVersion']}'),
+            const SizedBox(height: 10),
+            const Text('هل تريد التحديث الآن؟'),
+            const SizedBox(height: 10),
+            const Text(
+              'سيتم تنزيل وتثبيت التحديث تلقائياً',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('لاحقاً'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => UpdateCheckScreen(autoInstall: true, updateInfo: updateInfo),
+                ),
+              );
+            },
+            child: const Text('تحديث الآن'),
+          ),
+        ],
+      ),
+    );
+  }
 
   final List<NavigationItem> _navigationItems = [
     NavigationItem(

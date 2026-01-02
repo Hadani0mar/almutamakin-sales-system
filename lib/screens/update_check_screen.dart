@@ -1,11 +1,16 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:path/path.dart' as path;
 import '../services/update_service.dart';
 
 class UpdateCheckScreen extends StatefulWidget {
-  const UpdateCheckScreen({super.key});
+  final bool autoInstall;
+  final Map<String, dynamic>? updateInfo;
+  
+  const UpdateCheckScreen({
+    super.key,
+    this.autoInstall = false,
+    this.updateInfo,
+  });
 
   @override
   State<UpdateCheckScreen> createState() => _UpdateCheckScreenState();
@@ -54,76 +59,63 @@ class _UpdateCheckScreenState extends State<UpdateCheckScreen> {
     setState(() {
       _isDownloading = true;
       _downloadProgress = 0.0;
+      _errorMessage = '';
     });
 
     try {
       final downloadUrl = _updateInfo!['downloadUrl'] as String;
       
-      // تنزيل التحديث
-      final success = await UpdateService.downloadUpdate(
+      // تنزيل وتثبيت التحديث تلقائياً بالكامل
+      final success = await UpdateService.downloadAndInstallAutomatically(
         downloadUrl,
-        (downloaded, total) {
-          setState(() {
-            _downloadProgress = total > 0 ? downloaded / total : 0.0;
-          });
+        (status, progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress;
+              if (status.isNotEmpty) {
+                // يمكن عرض حالة التحديث
+                print('حالة التحديث: $status - ${(progress * 100).toStringAsFixed(1)}%');
+              }
+            });
+          }
         },
       );
 
-      if (success) {
-        // تثبيت التحديث
-        final appPath = Platform.resolvedExecutable;
-        final appDir = path.dirname(appPath);
-        final updateDir = path.join(appDir, 'updates');
-        final fileName = path.basename(downloadUrl);
-        final updateFilePath = path.join(updateDir, fileName);
-        
-        final installSuccess = await UpdateService.installUpdate(updateFilePath);
-        
-        if (installSuccess) {
-          // إعادة تشغيل التطبيق
-          if (mounted) {
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => AlertDialog(
-                title: const Text('تم التثبيت بنجاح'),
-                content: const Text('سيتم إعادة تشغيل التطبيق الآن...'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      UpdateService.restartApp();
-                    },
-                    child: const Text('موافق'),
-                  ),
-                ],
-              ),
-            );
-          }
-        } else {
+      if (!success) {
+        if (mounted) {
           setState(() {
-            _errorMessage = 'فشل تثبيت التحديث';
+            _errorMessage = 'فشل التحديث التلقائي';
+            _isDownloading = false;
           });
         }
-      } else {
+      }
+      // إذا نجح، سيتم إعادة تشغيل التطبيق تلقائياً
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _errorMessage = 'فشل تنزيل التحديث';
+          _errorMessage = 'خطأ: $e';
+          _isDownloading = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'خطأ: $e';
-      });
-    } finally {
-      setState(() {
-        _isDownloading = false;
-      });
     }
   }
 
   @override
   void initState() {
     super.initState();
-    _checkForUpdates();
+    if (widget.updateInfo != null) {
+      setState(() {
+        _updateInfo = widget.updateInfo;
+      });
+      if (widget.autoInstall) {
+        // بدء التنزيل والتثبيت تلقائياً بعد ثانية واحدة
+        Future.delayed(const Duration(seconds: 1), () {
+          _downloadAndInstall();
+        });
+      }
+    } else {
+      _checkForUpdates();
+    }
   }
 
   @override
@@ -149,9 +141,17 @@ class _UpdateCheckScreenState extends State<UpdateCheckScreen> {
             else if (_isDownloading)
               Column(
                 children: [
-                  CircularProgressIndicator(value: _downloadProgress),
+                  CircularProgressIndicator(value: _downloadProgress > 0 ? _downloadProgress : null),
                   const SizedBox(height: 20),
-                  Text('جاري التنزيل: ${(_downloadProgress * 100).toStringAsFixed(1)}%'),
+                  Text(
+                    _downloadProgress < 0.5
+                        ? 'جاري تنزيل التحديث: ${(_downloadProgress * 100).toStringAsFixed(1)}%'
+                        : _downloadProgress < 1.0
+                            ? 'جاري تثبيت التحديث: ${(_downloadProgress * 100).toStringAsFixed(1)}%'
+                            : 'تم التثبيت! جاري إعادة التشغيل...',
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               )
             else if (_updateInfo != null && _updateInfo!['hasUpdate'] == true)
