@@ -5,6 +5,7 @@ import 'user_session_actions_screen.dart';
 import 'sales_invoices_screen.dart';
 import 'stock_management_screen.dart';
 import 'login_screen.dart';
+import 'update_check_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic>? currentUser;
@@ -194,6 +195,32 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       );
                     },
+                  ),
+                ),
+                // Update Check Button
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: ListTile(
+                    leading: Icon(
+                      FontAwesomeIcons.arrowsRotate,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                    title: Text(
+                      'التحقق من التحديثات',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const UpdateCheckScreen()),
+                      );
+                    },
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 // Logout Button
