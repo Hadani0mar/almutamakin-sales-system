@@ -126,6 +126,13 @@ class UpdateService {
   /// تثبيت التحديث وحذف النسخة القديمة
   static Future<bool> installUpdate(String updateFilePath) async {
     try {
+      // التحقق من وجود الملف
+      final zipFile = File(updateFilePath);
+      if (!await zipFile.exists()) {
+        print('خطأ: ملف التحديث غير موجود: $updateFilePath');
+        return false;
+      }
+      
       final appPath = Platform.resolvedExecutable;
       final appDir = path.dirname(appPath);
       
@@ -135,85 +142,133 @@ class UpdateService {
       
       // إذا كان الملف ZIP، استخراجه
       if (updateFilePath.endsWith('.zip')) {
-        final bytes = await File(updateFilePath).readAsBytes();
+        print('قراءة ملف ZIP...');
+        final bytes = await zipFile.readAsBytes();
+        print('حجم ملف ZIP: ${bytes.length} بايت');
+        
+        print('فك ضغط الأرشيف...');
         final archive = ZipDecoder().decodeBytes(bytes);
         
         print('تم فك ضغط الأرشيف، عدد الملفات: ${archive.length}');
         
-        // إنشاء قائمة بالملفات القديمة قبل الاستبدال
-        final oldFiles = <String>[];
-        final appDirObj = Directory(appDir);
-        if (await appDirObj.exists()) {
-          await for (var entity in appDirObj.list(recursive: false)) {
-            if (entity is File) {
-              final fileName = path.basename(entity.path);
-              // لا نحذف ملفات النظام المهمة
-              if (!fileName.endsWith('.bat') && 
-                  !fileName.endsWith('.log') &&
-                  fileName != 'restart.bat') {
-                oldFiles.add(entity.path);
-              }
-            }
-          }
+        if (archive.isEmpty) {
+          print('خطأ: الأرشيف فارغ');
+          return false;
         }
+        
+        int extractedCount = 0;
+        int skippedCount = 0;
         
         // استخراج الملفات الجديدة
         for (var file in archive) {
-          final filename = file.name;
-          if (file.isFile) {
-            final data = file.content as List<int>;
-            final outputPath = path.join(appDir, filename);
-            final outputFile = File(outputPath);
+          try {
+            final filename = file.name;
             
-            // إنشاء المجلدات إذا لزم الأمر
-            final outputDir = Directory(path.dirname(outputPath));
-            if (!await outputDir.exists()) {
-              await outputDir.create(recursive: true);
+            // تخطي المجلدات
+            if (!file.isFile) {
+              continue;
             }
             
-            // حذف الملف القديم إذا كان موجوداً
-            if (await outputFile.exists()) {
-              try {
-                await outputFile.delete();
-                print('تم حذف الملف القديم: $filename');
-              } catch (e) {
-                print('تحذير: لم يتم حذف الملف القديم $filename: $e');
+            // تجاهل الملفات في المجلد الجذر فقط (لا نستخرج المجلدات الفرعية)
+            if (filename.contains('/') || filename.contains('\\')) {
+              // استخراج الملفات من المجلدات الفرعية أيضاً
+              final outputPath = path.join(appDir, filename.replaceAll('/', path.separator));
+              final outputFile = File(outputPath);
+              
+              // إنشاء المجلدات إذا لزم الأمر
+              final outputDir = Directory(path.dirname(outputPath));
+              if (!await outputDir.exists()) {
+                await outputDir.create(recursive: true);
+                print('تم إنشاء المجلد: ${path.dirname(outputPath)}');
               }
+              
+              // حذف الملف القديم إذا كان موجوداً
+              if (await outputFile.exists()) {
+                try {
+                  await outputFile.delete();
+                  print('تم حذف الملف القديم: $filename');
+                } catch (e) {
+                  print('تحذير: لم يتم حذف الملف القديم $filename: $e');
+                  // محاولة إعادة تسمية الملف القديم بدلاً من حذفه
+                  try {
+                    final oldFile = File('${outputFile.path}.old');
+                    if (await oldFile.exists()) {
+                      await oldFile.delete();
+                    }
+                    await outputFile.rename(oldFile.path);
+                    print('تم إعادة تسمية الملف القديم: $filename');
+                  } catch (e2) {
+                    print('تحذير: لم يتم إعادة تسمية الملف القديم: $e2');
+                  }
+                }
+              }
+              
+              // كتابة الملف الجديد
+              final data = file.content as List<int>;
+              await outputFile.writeAsBytes(data);
+              extractedCount++;
+              print('تم استخراج الملف: $filename (${data.length} بايت)');
+            } else {
+              // ملف في المجلد الجذر
+              final outputPath = path.join(appDir, filename);
+              final outputFile = File(outputPath);
+              
+              // حذف الملف القديم إذا كان موجوداً
+              if (await outputFile.exists()) {
+                try {
+                  // إذا كان الملف قيد الاستخدام (مثل EXE)، نحاول إعادة تسميته
+                  if (filename.endsWith('.exe') || filename.endsWith('.dll')) {
+                    final oldFile = File('${outputFile.path}.old');
+                    if (await oldFile.exists()) {
+                      await oldFile.delete();
+                    }
+                    await outputFile.rename(oldFile.path);
+                    print('تم إعادة تسمية الملف القديم: $filename');
+                  } else {
+                    await outputFile.delete();
+                    print('تم حذف الملف القديم: $filename');
+                  }
+                } catch (e) {
+                  print('تحذير: لم يتم حذف/إعادة تسمية الملف القديم $filename: $e');
+                  // محاولة إعادة تسمية بدلاً من الحذف
+                  try {
+                    final oldFile = File('${outputFile.path}.old');
+                    if (await oldFile.exists()) {
+                      await oldFile.delete();
+                    }
+                    await outputFile.rename(oldFile.path);
+                    print('تم إعادة تسمية الملف القديم: $filename');
+                  } catch (e2) {
+                    print('خطأ: فشل إعادة تسمية الملف: $e2');
+                    skippedCount++;
+                    continue;
+                  }
+                }
+              }
+              
+              // كتابة الملف الجديد
+              final data = file.content as List<int>;
+              await outputFile.writeAsBytes(data);
+              extractedCount++;
+              print('تم استخراج الملف: $filename (${data.length} بايت)');
             }
-            
-            // كتابة الملف الجديد
-            await outputFile.writeAsBytes(data);
-            print('تم استبدال الملف: $filename');
+          } catch (e) {
+            print('خطأ في استخراج الملف ${file.name}: $e');
+            skippedCount++;
           }
         }
         
-        // حذف الملفات القديمة التي لم تعد موجودة في الأرشيف الجديد
-        final newFiles = archive
-            .where((f) => f.isFile)
-            .map((f) => path.join(appDir, f.name))
-            .toSet();
+        print('تم استخراج $extractedCount ملف، تم تخطي $skippedCount ملف');
         
-        for (var oldFile in oldFiles) {
-          if (!newFiles.contains(oldFile)) {
-            try {
-              final file = File(oldFile);
-              if (await file.exists()) {
-                await file.delete();
-                print('تم حذف الملف القديم غير المستخدم: ${path.basename(oldFile)}');
-              }
-            } catch (e) {
-              print('تحذير: لم يتم حذف الملف القديم ${path.basename(oldFile)}: $e');
-            }
-          }
+        if (extractedCount == 0) {
+          print('خطأ: لم يتم استخراج أي ملفات');
+          return false;
         }
         
-        // حذف ملف ZIP بعد الاستخراج
+        // حذف ملف ZIP بعد الاستخراج الناجح
         try {
-          final zipFile = File(updateFilePath);
-          if (await zipFile.exists()) {
-            await zipFile.delete();
-            print('تم حذف ملف ZIP بعد الاستخراج');
-          }
+          await zipFile.delete();
+          print('تم حذف ملف ZIP بعد الاستخراج');
         } catch (e) {
           print('تحذير: لم يتم حذف ملف ZIP: $e');
         }
@@ -226,9 +281,11 @@ class UpdateService {
         return true;
       }
       
+      print('خطأ: نوع الملف غير مدعوم');
       return false;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('خطأ في تثبيت التحديث: $e');
+      print('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -310,25 +367,42 @@ del "%~f0"
         return false;
       }
       
-      // 2. التثبيت
+      // 2. التحقق من وجود الملف قبل التثبيت
       final appPath = Platform.resolvedExecutable;
       final appDir = path.dirname(appPath);
       final updateDir = path.join(appDir, 'updates');
       final fileName = path.basename(downloadUrl);
       final updateFilePath = path.join(updateDir, fileName);
       
+      // التحقق من وجود الملف
+      final downloadedFile = File(updateFilePath);
+      if (!await downloadedFile.exists()) {
+        print('خطأ: ملف التحديث غير موجود بعد التنزيل: $updateFilePath');
+        if (onProgress != null) {
+          onProgress('خطأ: ملف التحديث غير موجود', 0.0);
+        }
+        return false;
+      }
+      
+      final fileSize = await downloadedFile.length();
+      print('تم تنزيل الملف بنجاح: $updateFilePath (${fileSize} بايت)');
+      
       if (onProgress != null) {
         onProgress('جاري تثبيت التحديث...', 0.5);
       }
       
+      print('بدء عملية التثبيت...');
       final installSuccess = await installUpdate(updateFilePath);
       
       if (!installSuccess) {
+        print('فشل تثبيت التحديث');
         if (onProgress != null) {
           onProgress('فشل تثبيت التحديث', 0.0);
         }
         return false;
       }
+      
+      print('تم تثبيت التحديث بنجاح');
       
       if (onProgress != null) {
         onProgress('تم التثبيت بنجاح! جاري إعادة التشغيل...', 1.0);
